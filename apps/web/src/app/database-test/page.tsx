@@ -19,45 +19,46 @@ export default function DatabaseTestPage() {
       try {
         const supabase = createClient();
 
-        const [categories, meals] = await Promise.all([
+        const [categoriesResult, mealsResult] = await Promise.all([
           supabase
             .from("categories")
-            .select("*", { count: "exact", head: true }),
+            .select("id", { count: "exact", head: true }),
 
           supabase
             .from("meals")
-            .select("*", { count: "exact", head: true }),
+            .select("id", { count: "exact", head: true }),
         ]);
 
-        if (categories.error) {
-          throw categories.error;
+        if (categoriesResult.error) {
+          throw categoriesResult.error;
         }
 
-        if (meals.error) {
-          throw meals.error;
+        if (mealsResult.error) {
+          throw mealsResult.error;
         }
 
         setResult({
-          categories: categories.count ?? 0,
-          meals: meals.count ?? 0,
+          categories: categoriesResult.count ?? 0,
+          meals: mealsResult.count ?? 0,
         });
       } catch (err: unknown) {
-        if (typeof err === "object" && err !== null) {
-          const e = err as Record<string, unknown>;
+        const dbError = err as {
+          message?: string;
+          code?: string;
+          details?: string;
+          hint?: string;
+        };
 
-          console.error("Supabase connection error:", err);
+        setError(
+          [
+            `Message: ${dbError.message ?? "No message provided"}`,
+            `Code: ${dbError.code ?? "Not provided"}`,
+            `Details: ${dbError.details ?? "Not provided"}`,
+            `Hint: ${dbError.hint ?? "Not provided"}`,
+          ].join("\n")
+        );
 
-          setError(
-            [
-              `Message: ${String(e.message ?? "Unknown error")}`,
-              `Code: ${String(e.code ?? "Not provided")}`,
-              `Details: ${String(e.details ?? "Not provided")}`,
-              `Hint: ${String(e.hint ?? "Not provided")}`,
-            ].join("\n")
-          );
-        } else {
-          setError(String(err));
-        }
+        console.error("Tabby Eats Supabase diagnostic:", err);
       } finally {
         setLoading(false);
       }
@@ -92,12 +93,16 @@ export default function DatabaseTestPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="rounded-xl bg-orange-50 p-4">
                 <p className="text-sm text-gray-600">Food categories</p>
-                <p className="text-3xl font-bold">{result.categories}</p>
+                <p className="text-3xl font-bold">
+                  {result.categories}
+                </p>
               </div>
 
               <div className="rounded-xl bg-orange-50 p-4">
                 <p className="text-sm text-gray-600">Meals</p>
-                <p className="text-3xl font-bold">{result.meals}</p>
+                <p className="text-3xl font-bold">
+                  {result.meals}
+                </p>
               </div>
             </div>
           </div>
@@ -105,8 +110,8 @@ export default function DatabaseTestPage() {
 
         {error && (
           <div className="mt-8 rounded-xl bg-red-50 p-4 text-red-700">
-            <strong>Connection failed</strong>
-            <pre className="mt-3 whitespace-pre-wrap text-sm">
+            <strong>Database request failed</strong>
+            <pre className="mt-3 whitespace-pre-wrap break-words text-sm">
               {error}
             </pre>
           </div>

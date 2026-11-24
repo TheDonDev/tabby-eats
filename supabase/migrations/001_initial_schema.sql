@@ -7,7 +7,7 @@
 create extension if not exists pgcrypto;
 
 -- 1. CUSTOMER PROFILES
-create table public.profiles (
+create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   full_name text,
   phone text unique,
@@ -38,13 +38,13 @@ begin
 end;
 $$;
 
-create trigger on_auth_user_created
+create trigger if not exists on_auth_user_created
 after insert on auth.users
 for each row execute procedure public.handle_new_user();
 
 
 -- 2. FOOD CATEGORIES
-create table public.categories (
+create table if not exists public.categories (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   slug text unique not null,
@@ -56,7 +56,7 @@ create table public.categories (
 
 
 -- 3. MEALS
-create table public.meals (
+create table if not exists public.meals (
   id uuid primary key default gen_random_uuid(),
   category_id uuid references public.categories(id),
   name text not null,
@@ -74,7 +74,7 @@ create table public.meals (
 
 
 -- 4. READY-TO-COOK MEAL KITS
-create table public.meal_kits (
+create table if not exists public.meal_kits (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   description text,
@@ -93,7 +93,7 @@ create table public.meal_kits (
 
 
 -- 5. NAIROBI DELIVERY ZONES
-create table public.delivery_zones (
+create table if not exists public.delivery_zones (
   id uuid primary key default gen_random_uuid(),
   estate_name text unique not null,
   delivery_fee numeric(10,2) not null default 0,
@@ -104,7 +104,7 @@ create table public.delivery_zones (
 
 
 -- 6. CUSTOMER ORDERS
-create table public.orders (
+create table if not exists public.orders (
   id uuid primary key default gen_random_uuid(),
   order_number text unique not null,
   customer_id uuid not null references public.profiles(id),
@@ -130,7 +130,7 @@ create table public.orders (
 
 
 -- 7. ORDER ITEMS
-create table public.order_items (
+create table if not exists public.order_items (
   id uuid primary key default gen_random_uuid(),
   order_id uuid not null references public.orders(id) on delete cascade,
   meal_id uuid references public.meals(id),
@@ -148,7 +148,7 @@ create table public.order_items (
 
 
 -- 8. PRIVATE CHEF BOOKINGS
-create table public.chef_bookings (
+create table if not exists public.chef_bookings (
   id uuid primary key default gen_random_uuid(),
   customer_id uuid not null references public.profiles(id),
   booking_date date not null,
@@ -168,7 +168,7 @@ create table public.chef_bookings (
 
 
 -- 9. PAYMENT TRANSACTIONS
-create table public.payments (
+create table if not exists public.payments (
   id uuid primary key default gen_random_uuid(),
   order_id uuid not null references public.orders(id),
   provider text not null check (provider in ('mpesa', 'cash')),
@@ -185,7 +185,7 @@ create table public.payments (
 
 
 -- 10. INVENTORY
-create table public.inventory (
+create table if not exists public.inventory (
   id uuid primary key default gen_random_uuid(),
   item_name text not null unique,
   quantity numeric(10,2) not null default 0,
@@ -196,22 +196,22 @@ create table public.inventory (
 
 
 -- INDEXES
-create index idx_meals_category
+create index if not exists idx_meals_category
 on public.meals(category_id);
 
-create index idx_meals_available
+create index if not exists idx_meals_available
 on public.meals(is_available);
 
-create index idx_orders_customer
+create index if not exists idx_orders_customer
 on public.orders(customer_id);
 
-create index idx_orders_status
+create index if not exists idx_orders_status
 on public.orders(order_status);
 
-create index idx_bookings_customer
+create index if not exists idx_bookings_customer
 on public.chef_bookings(customer_id);
 
-create index idx_orders_created
+create index if not exists idx_orders_created
 on public.orders(created_at desc);
 
 
@@ -229,21 +229,25 @@ alter table public.inventory enable row level security;
 
 
 -- PUBLIC CATALOG ACCESS
+drop policy if exists "Public can view active categories" on public.categories;
 create policy "Public can view active categories"
 on public.categories for select
 to anon, authenticated
 using (is_active = true);
 
+drop policy if exists "Public can view available meals" on public.meals;
 create policy "Public can view available meals"
 on public.meals for select
 to anon, authenticated
 using (is_available = true);
 
+drop policy if exists "Public can view available meal kits" on public.meal_kits;
 create policy "Public can view available meal kits"
 on public.meal_kits for select
 to anon, authenticated
 using (is_available = true);
 
+drop policy if exists "Public can view active delivery zones" on public.delivery_zones;
 create policy "Public can view active delivery zones"
 on public.delivery_zones for select
 to anon, authenticated
@@ -251,6 +255,7 @@ using (is_active = true);
 
 
 -- CUSTOMER PROFILE ACCESS
+drop policy if exists "Customers can view own profile" on public.profiles;
 create policy "Customers can view own profile"
 on public.profiles for select
 to authenticated
@@ -258,11 +263,13 @@ using (id = (select auth.uid()));
 
 
 -- CUSTOMER ORDER ACCESS
+drop policy if exists "Customers can view own orders" on public.orders;
 create policy "Customers can view own orders"
 on public.orders for select
 to authenticated
 using (customer_id = (select auth.uid()));
 
+drop policy if exists "Customers can view own order items" on public.order_items;
 create policy "Customers can view own order items"
 on public.order_items for select
 to authenticated
@@ -277,11 +284,13 @@ using (
 
 
 -- CUSTOMER BOOKING ACCESS
+drop policy if exists "Customers can create own bookings" on public.chef_bookings;
 create policy "Customers can create own bookings"
 on public.chef_bookings for insert
 to authenticated
 with check (customer_id = (select auth.uid()));
 
+drop policy if exists "Customers can view own bookings" on public.chef_bookings;
 create policy "Customers can view own bookings"
 on public.chef_bookings for select
 to authenticated
