@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useMemo, useState } from "react";
 import {
   ArrowRight,
@@ -257,9 +258,12 @@ export default function Home() {
         </div>
 
         <div className="hero-image">
-          <img
+          <Image
             src="https://images.unsplash.com/photo-1547592180-85f173990554?w=1200"
             alt="A delicious freshly prepared meal"
+            width={1200}
+            height={800}
+            priority
           />
           <div className="floating-card">
             <span className="floating-icon">🍲</span>
@@ -285,7 +289,7 @@ export default function Home() {
             return (
               <article className="service-card" key={service.title}>
                 <div className="service-image">
-                  <img src={service.image} alt={service.title} loading="lazy" />
+                  <Image src={service.image} alt={service.title} width={900} height={600} />
                   <span className="service-icon"><Icon size={22} /></span>
                 </div>
                 <div className="service-body">
@@ -326,7 +330,7 @@ export default function Home() {
           {visibleMeals.map((meal) => (
             <article className="meal-card" key={meal.id}>
               <div className="meal-image">
-                <img src={meal.image} alt={meal.name} loading="lazy" />
+                <Image src={meal.image} alt={meal.name} width={800} height={600} />
                 <span className="meal-tag">{meal.tag}</span>
                 <button
                   className="favourite-button"
@@ -374,10 +378,11 @@ export default function Home() {
           </a>
         </div>
         <div className="experience-image">
-          <img
+          <Image
             src="https://images.unsplash.com/photo-1556911220-e15b29be8c8f?w=1000"
             alt="A beautifully prepared home dining experience"
-            loading="lazy"
+            width={1000}
+            height={667}
           />
         </div>
       </section>
@@ -463,7 +468,7 @@ export default function Home() {
                 <div className="cart-items">
                   {cartItems.map((meal) => (
                     <div className="cart-item" key={meal.id}>
-                      <img src={meal.image} alt={meal.name} />
+                      <Image src={meal.image} alt={meal.name} width={85} height={85} />
                       <div className="cart-item-info">
                         <strong>{meal.name}</strong>
                         <span>KSh {meal.price.toLocaleString("en-KE")}</span>
