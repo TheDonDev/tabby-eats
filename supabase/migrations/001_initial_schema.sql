@@ -300,6 +300,7 @@ using (customer_id = (select auth.uid()));
 
 
 -- CUSTOMER PAYMENT ACCESS
+drop policy if exists "Customers can view own payments" on public.payments;
 create policy "Customers can view own payments"
 on public.payments for select
 to authenticated
