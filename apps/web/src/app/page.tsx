@@ -1,7 +1,8 @@
 "use client";
 
 import Image from "next/image";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+
 import {
   ArrowRight,
   CalendarDays,
@@ -13,6 +14,7 @@ import {
   Minus,
   Package,
   Plus,
+  Search,
   ShoppingBag,
   ShoppingCart,
   Utensils,
@@ -21,77 +23,22 @@ import {
   Star,
 } from "lucide-react";
 
-const categories = [
-  "All Meals",
-  "Kenyan Classics",
-  "Coastal Flavours",
-  "Choma Corner",
-  "Healthy Kitchen",
-  "Breakfast",
-];
+import { createClient } from "@/lib/supabase/client";
 
-const meals = [
-  {
-    id: 1,
-    name: "Beef Stew & Ugali",
-    description: "Slow-cooked beef, ugali and fresh sukuma wiki.",
-    price: 450,
-    category: "Kenyan Classics",
-    image:
-      "https://images.unsplash.com/photo-1547592180-85f173990554?w=800",
-    tag: "Customer favourite",
-  },
-  {
-    id: 2,
-    name: "Chicken Pilau",
-    description: "Fragrant Swahili rice with tender chicken.",
-    price: 550,
-    category: "Coastal Flavours",
-    image:
-      "https://images.unsplash.com/photo-1512058564366-18510be2db19?w=800",
-    tag: "Chef's special",
-  },
-  {
-    id: 3,
-    name: "Nyama Choma Platter",
-    description: "Grilled meat served with kachumbari and sides.",
-    price: 900,
-    category: "Choma Corner",
-    image:
-      "https://images.unsplash.com/photo-1544025162-d76694265947?w=800",
-    tag: "Popular",
-  },
-  {
-    id: 4,
-    name: "Healthy Chicken Bowl",
-    description: "Grilled chicken, fresh vegetables and rice.",
-    price: 650,
-    category: "Healthy Kitchen",
-    image:
-      "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=800",
-    tag: "Fresh & healthy",
-  },
-  {
-    id: 5,
-    name: "Homemade Chapati",
-    description: "Soft, freshly prepared Kenyan chapati.",
-    price: 100,
-    category: "Kenyan Classics",
-    image:
-      "https://images.unsplash.com/photo-1565557623262-b51c2513a641?w=800",
-    tag: "Made fresh",
-  },
-  {
-    id: 6,
-    name: "Breakfast Special",
-    description: "Eggs, mandazi and a warm cup of Kenyan tea.",
-    price: 300,
-    category: "Breakfast",
-    image:
-      "https://images.unsplash.com/photo-1533089860892-a7c6f0a88666?w=800",
-    tag: "Morning favourite",
-  },
-];
+type Meal = {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  category: string;
+  image: string;
+  tag?: string;
+};
+
+const FALLBACK_MEAL_IMAGE =
+  "https://images.unsplash.com/photo-1547592180-85f173990554?w=800";
+
+const CART_STORAGE_KEY = "tabby-eats-cart";
 
 const services = [
   {
@@ -126,23 +73,164 @@ const services = [
   },
 ];
 
-type Meal = (typeof meals)[number];
-
 export default function Home() {
   const [activeCategory, setActiveCategory] = useState("All Meals");
-  const [cart, setCart] = useState<Record<number, number>>({});
+
+  const [meals, setMeals] = useState<Meal[]>([]);
+  const [categoryNames, setCategoryNames] = useState<string[]>([]);
+
+  const [menuLoading, setMenuLoading] = useState(true);
+  const [menuError, setMenuError] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const [cart, setCart] = useState<Record<string, number>>(() => {
+    if (typeof window === "undefined") {
+      return {};
+    }
+
+    try {
+      const savedCart = localStorage.getItem(CART_STORAGE_KEY);
+
+      if (savedCart) {
+        const parsedCart = JSON.parse(savedCart);
+
+        if (
+          parsedCart &&
+          typeof parsedCart === "object" &&
+          !Array.isArray(parsedCart)
+        ) {
+          return parsedCart as Record<string, number>;
+        }
+      }
+    } catch (error) {
+      console.error("Could not restore shopping cart:", error);
+    }
+
+    return {};
+  });
+
+  const [favourites, setFavourites] = useState<string[]>([]);
+
   const [cartOpen, setCartOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  const visibleMeals = useMemo(
-    () =>
-      activeCategory === "All Meals"
-        ? meals
-        : meals.filter((meal) => meal.category === activeCategory),
-    [activeCategory]
-  );
+  useEffect(() => {
+    let cancelled = false;
 
-  const cartItems = meals.filter((meal) => cart[meal.id] > 0);
+    async function loadMenu() {
+      try {
+        setMenuLoading(true);
+        setMenuError("");
+
+        const supabase = createClient();
+
+        const [categoriesResult, mealsResult] = await Promise.all([
+          supabase
+            .from("categories")
+            .select("id, name")
+            .eq("is_active", true)
+            .order("name"),
+
+          supabase
+            .from("meals")
+            .select(
+              "id, name, description, price, image_url, category_id, is_available, is_featured, created_at"
+            )
+            .eq("is_available", true)
+            .order("created_at", { ascending: false }),
+        ]);
+
+        if (categoriesResult.error) {
+          throw categoriesResult.error;
+        }
+
+        if (mealsResult.error) {
+          throw mealsResult.error;
+        }
+
+        if (cancelled) return;
+
+        const categoriesData = categoriesResult.data ?? [];
+
+        const categoryMap = new Map(
+          categoriesData.map((category) => [
+            category.id,
+            category.name,
+          ])
+        );
+
+        const loadedMeals: Meal[] = (mealsResult.data ?? []).map(
+          (meal) => ({
+            id: meal.id,
+            name: meal.name,
+            description: meal.description ?? "Freshly prepared by Chef Tabby.",
+            price: Number(meal.price),
+            category:
+              categoryMap.get(meal.category_id ?? "") ?? "Other",
+            image: meal.image_url || FALLBACK_MEAL_IMAGE,
+            tag: meal.is_featured ? "Chef's special" : undefined,
+          })
+        );
+
+        setCategoryNames(
+          categoriesData.map((category) => category.name)
+        );
+
+        setMeals(loadedMeals);
+      } catch (error) {
+        console.error("Unable to load Tabby Eats menu:", error);
+
+        if (!cancelled) {
+          setMenuError(
+            error instanceof Error
+              ? error.message
+              : "Unable to load the menu. Please try again."
+          );
+        }
+      } finally {
+        if (!cancelled) {
+          setMenuLoading(false);
+        }
+      }
+    }
+
+    loadMenu();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem(
+      CART_STORAGE_KEY,
+      JSON.stringify(cart)
+    );
+  }, [cart]);
+
+  const categories = ["All Meals", ...categoryNames];
+
+  const visibleMeals = useMemo(() => {
+    return meals.filter((meal) => {
+      const matchesCategory =
+        activeCategory === "All Meals" ||
+        meal.category === activeCategory;
+
+      const search = searchQuery.trim().toLowerCase();
+
+      const matchesSearch =
+        !search ||
+        meal.name.toLowerCase().includes(search) ||
+        meal.description.toLowerCase().includes(search) ||
+        meal.category.toLowerCase().includes(search);
+
+      return matchesCategory && matchesSearch;
+    });
+  }, [meals, activeCategory, searchQuery]);
+
+  const cartItems = meals.filter(
+    (meal) => (cart[meal.id] ?? 0) > 0
+  );
 
   const cartCount = Object.values(cart).reduce(
     (total, quantity) => total + quantity,
@@ -150,7 +238,8 @@ export default function Home() {
   );
 
   const cartTotal = cartItems.reduce(
-    (total, meal) => total + meal.price * cart[meal.id],
+    (total, meal) =>
+      total + meal.price * (cart[meal.id] ?? 0),
     0
   );
 
@@ -159,11 +248,14 @@ export default function Home() {
       ...current,
       [meal.id]: (current[meal.id] || 0) + 1,
     }));
+
+    setCartOpen(true);
   }
 
-  function updateQuantity(id: number, change: number) {
+  function updateQuantity(id: string, change: number) {
     setCart((current) => {
       const next = { ...current };
+
       const quantity = (next[id] || 0) + change;
 
       if (quantity <= 0) {
@@ -174,6 +266,14 @@ export default function Home() {
 
       return next;
     });
+  }
+
+  function toggleFavourite(id: string) {
+    setFavourites((current) =>
+      current.includes(id)
+        ? current.filter((item) => item !== id)
+        : [...current, id]
+    );
   }
 
   return (
@@ -289,7 +389,13 @@ export default function Home() {
             return (
               <article className="service-card" key={service.title}>
                 <div className="service-image">
-                  <Image src={service.image} alt={service.title} width={900} height={600} />
+                  <Image
+                    src={service.image}
+                    alt={service.title}
+                    width={900}
+                    height={600}
+                    loading="lazy"
+                  />
                   <span className="service-icon"><Icon size={22} /></span>
                 </div>
                 <div className="service-body">
@@ -312,6 +418,20 @@ export default function Home() {
           <p>Real Kenyan flavours, lovingly prepared and served fresh.</p>
         </div>
 
+        <div className="menu-tools">
+          <div className="menu-search">
+            <Search size={19} />
+
+            <input
+              type="search"
+              placeholder="Search meals, ingredients or categories..."
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              aria-label="Search meals"
+            />
+          </div>
+        </div>
+
         <div className="category-list">
           {categories.map((category) => (
             <button
@@ -320,45 +440,106 @@ export default function Home() {
               className={`category-button ${
                 activeCategory === category ? "active" : ""
               }`}
+              aria-pressed={activeCategory === category}
             >
               {category}
             </button>
           ))}
         </div>
 
-        <div className="meal-grid">
-          {visibleMeals.map((meal) => (
-            <article className="meal-card" key={meal.id}>
-              <div className="meal-image">
-                <Image src={meal.image} alt={meal.name} width={800} height={600} />
-                <span className="meal-tag">{meal.tag}</span>
-                <button
-                  className="favourite-button"
-                  aria-label={`Favourite ${meal.name}`}
-                >
-                  <Heart size={18} />
-                </button>
-              </div>
+        {menuLoading ? (
+          <div className="menu-status">
+            <div className="loading-spinner" />
+            <p>Preparing Tabby&apos;s delicious menu...</p>
+          </div>
+        ) : menuError ? (
+          <div className="menu-status menu-error">
+            <h3>We couldn&apos;t load the menu</h3>
+            <p>{menuError}</p>
+            <button
+              className="primary-button"
+              onClick={() => window.location.reload()}
+            >
+              Try again
+            </button>
+          </div>
+        ) : visibleMeals.length === 0 ? (
+          <div className="menu-status">
+            <h3>No meals found</h3>
+            <p>
+              Try another search or select a different category.
+            </p>
+            <button
+              className="secondary-button"
+              onClick={() => {
+                setSearchQuery("");
+                setActiveCategory("All Meals");
+              }}
+            >
+              Clear filters
+            </button>
+          </div>
+        ) : (
+          <div className="meal-grid">
+            {visibleMeals.map((meal) => (
+              <article className="meal-card" key={meal.id}>
+                <div className="meal-image">
+                  <Image
+                    src={meal.image}
+                    alt={meal.name}
+                    width={800}
+                    height={600}
+                    unoptimized
+                  />
 
-              <div className="meal-body">
-                <span className="meal-category">{meal.category}</span>
-                <h3>{meal.name}</h3>
-                <p>{meal.description}</p>
+                  {meal.tag && (
+                    <span className="meal-tag">{meal.tag}</span>
+                  )}
 
-                <div className="meal-footer">
-                  <strong>KSh {meal.price.toLocaleString("en-KE")}</strong>
                   <button
-                    className="add-button"
-                    onClick={() => addToCart(meal)}
-                    aria-label={`Add ${meal.name} to cart`}
+                    className="favourite-button"
+                    onClick={() => toggleFavourite(meal.id)}
+                    aria-label={`Favourite ${meal.name}`}
+                    aria-pressed={favourites.includes(meal.id)}
                   >
-                    <Plus size={19} />
+                    <Heart
+                      size={18}
+                      fill={
+                        favourites.includes(meal.id)
+                          ? "currentColor"
+                          : "none"
+                      }
+                    />
                   </button>
                 </div>
-              </div>
-            </article>
-          ))}
-        </div>
+
+                <div className="meal-body">
+                  <span className="meal-category">
+                    {meal.category}
+                  </span>
+
+                  <h3>{meal.name}</h3>
+
+                  <p>{meal.description}</p>
+
+                  <div className="meal-footer">
+                    <strong>
+                      KSh {meal.price.toLocaleString("en-KE")}
+                    </strong>
+
+                    <button
+                      className="add-button"
+                      onClick={() => addToCart(meal)}
+                      aria-label={`Add ${meal.name} to cart`}
+                    >
+                      <Plus size={19} />
+                    </button>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
 
         <div className="menu-footer">
           <p>More delicious meals are coming from Tabby&apos;s kitchen!</p>
@@ -383,6 +564,7 @@ export default function Home() {
             alt="A beautifully prepared home dining experience"
             width={1000}
             height={667}
+            loading="lazy"
           />
         </div>
       </section>
@@ -468,7 +650,13 @@ export default function Home() {
                 <div className="cart-items">
                   {cartItems.map((meal) => (
                     <div className="cart-item" key={meal.id}>
-                      <Image src={meal.image} alt={meal.name} width={85} height={85} />
+                      <Image
+                        src={meal.image}
+                        alt={meal.name}
+                        width={85}
+                        height={85}
+                        unoptimized
+                      />
                       <div className="cart-item-info">
                         <strong>{meal.name}</strong>
                         <span>KSh {meal.price.toLocaleString("en-KE")}</span>

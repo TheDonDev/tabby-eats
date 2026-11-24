@@ -4,13 +4,13 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
-type TestResult = {
+type DatabaseStatus = {
   categories: number;
   meals: number;
 };
 
 export default function DatabaseTestPage() {
-  const [result, setResult] = useState<TestResult | null>(null);
+  const [status, setStatus] = useState<DatabaseStatus | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -37,11 +37,13 @@ export default function DatabaseTestPage() {
           throw mealsResult.error;
         }
 
-        setResult({
+        setStatus({
           categories: categoriesResult.count ?? 0,
           meals: mealsResult.count ?? 0,
         });
       } catch (err: unknown) {
+        console.error("Supabase database test:", err);
+
         const dbError = err as {
           message?: string;
           code?: string;
@@ -51,14 +53,12 @@ export default function DatabaseTestPage() {
 
         setError(
           [
-            `Message: ${dbError.message ?? "No message provided"}`,
+            `Message: ${dbError.message ?? "Unknown error"}`,
             `Code: ${dbError.code ?? "Not provided"}`,
             `Details: ${dbError.details ?? "Not provided"}`,
             `Hint: ${dbError.hint ?? "Not provided"}`,
           ].join("\n")
         );
-
-        console.error("Tabby Eats Supabase diagnostic:", err);
       } finally {
         setLoading(false);
       }
@@ -84,7 +84,7 @@ export default function DatabaseTestPage() {
           </p>
         )}
 
-        {result && (
+        {status && (
           <div className="mt-8 space-y-4">
             <div className="rounded-xl bg-green-50 p-4 text-green-800">
               <strong>Database connected successfully!</strong>
@@ -92,16 +92,18 @@ export default function DatabaseTestPage() {
 
             <div className="grid grid-cols-2 gap-4">
               <div className="rounded-xl bg-orange-50 p-4">
-                <p className="text-sm text-gray-600">Food categories</p>
+                <p className="text-sm text-gray-600">
+                  Food categories
+                </p>
                 <p className="text-3xl font-bold">
-                  {result.categories}
+                  {status.categories}
                 </p>
               </div>
 
               <div className="rounded-xl bg-orange-50 p-4">
                 <p className="text-sm text-gray-600">Meals</p>
                 <p className="text-3xl font-bold">
-                  {result.meals}
+                  {status.meals}
                 </p>
               </div>
             </div>
@@ -110,8 +112,8 @@ export default function DatabaseTestPage() {
 
         {error && (
           <div className="mt-8 rounded-xl bg-red-50 p-4 text-red-700">
-            <strong>Database request failed</strong>
-            <pre className="mt-3 whitespace-pre-wrap break-words text-sm">
+            <strong>Connection failed</strong>
+            <pre className="mt-2 whitespace-pre-wrap text-sm">
               {error}
             </pre>
           </div>
